@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Извлечение email из PDF</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://unpkg.com/tesseract.js@v5.0.4/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://unpkg.com/msg-outlook@1.0.1/dist/msg-outlook.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --background: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--background);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            flex: 1;
+        }
+
+        .email-form {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .form-group textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        .pdf-container {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .upload-section {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            display: none;
+        }
+
+        .file-input-label {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .file-input-label:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .viewer-container {
+            position: relative;
+            margin: 20px 0;
+        }
+
+        #pdfViewer {
+            border: 2px solid var(--border);
+            border-radius: 8px;
+        }
+
+        #selectionBox {
+            position: absolute;
+            border: 2px solid var(--primary-color);
+            background-color: rgba(37, 99, 235, 0.1);
+            pointer-events: none;
+            display: none;
+        }
+
+        .results {
+            margin-top: 20px;
+        }
+
+        .result-card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .result-card h3 {
+            margin: 0;
+            font-size: 16px;
+            color: var(--text);
+            width: 200px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .email-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .email-input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .preview-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .preview-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 90%;
+            max-height: 90%;
+            overflow: auto;
+        }
+
+        .preview-canvas {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .close-preview {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        #processBtn {
+            display: block;
+            width: 100%;
+            max-width: 300px;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #processBtn:disabled {
+            background-color: var(--border);
+            cursor: not-allowed;
+        }
+
+        .processing-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--card-bg);
+            padding: 10px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: none;
+            z-index: 1000;
+        }
+
+        footer {
+            height: 500px;
+            background-color: var(--card-bg);
+            margin-top: 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="email-form">
+            <div class="form-group">
+                <label for="emailSubject">Тема письма</label>
+                <input type="text" id="emailSubject" placeholder="Введите тему письма">
+            </div>
+            <div class="form-group">
+                <label for="emailMessage">Сообщение</label>
+                <textarea id="emailMessage" placeholder="Введите текст сообщения"></textarea>
+            </div>
+        </div>
+
+        <div class="results" id="results"></div>
+        
+        <div class="pdf-container">
+            <div class="upload-section">
+                <div class="file-input-wrapper">
+                    <input type="file" id="fileInput" accept=".pdf" multiple>
+                    <label for="fileInput" class="file-input-label">Выберите PDF файлы</label>
+                </div>
+            </div>
+            
+            <div class="viewer-container">
+                <canvas id="pdfViewer"></canvas>
+                <div id="selectionBox"></div>
+            </div>
+            
+            <button id="processBtn" disabled>Обработать файлы</button>
+        </div>
+    </div>
+
+    <div id="processingIndicator" class="processing-indicator">
+        Обработано: <span id="processedCount">0</span>/<span id="totalCount">0</span>
+    </div>
+
+    <footer></footer>
+
+    <div id="previewModal" class="preview-modal">
+        <button class="close-preview" onclick="closePreview()">×</button>
+        <div class="preview-content">
+            <canvas id="previewCanvas" class="preview-canvas"></canvas>
+        </div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// Replace msg-outlook with msglib
+const script = document.createElement('script');
+script.src = 'https://cdn.jsdelivr.net/npm/msglib@latest/dist/msglib.min.js';
+script.onload = function() {
+    console.log('MSG library loaded successfully');
+};
+document.head.appendChild(script);
+
+let selectedArea = null;
+let isSelecting = false;
+let startX, startY;
+const canvas = document.getElementById('pdfViewer');
+const ctx = canvas.getContext('2d');
+const selectionBox = document.getElementById('selectionBox');
+const processBtn = document.getElementById('processBtn');
+const previewModal = document.getElementById('previewModal');
+const previewCanvas = document.getElementById('previewCanvas');
+const processingIndicator = document.getElementById('processingIndicator');
+let selectedFiles = [];
+let pdfPreviews = new Map();
+let pdfContents = new Map();
+
+        async function displayFirstPage(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 1.5 });
+
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            await page.render({
+                canvasContext: ctx,
+                viewport: viewport
+            }).promise;
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            isSelecting = true;
+            selectionBox.style.display = 'block';
+            selectionBox.style.left = startX + 'px';
+            selectionBox.style.top = startY + 'px';
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isSelecting) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+
+            const width = currentX - startX;
+            const height = currentY - startY;
+
+            selectionBox.style.width = Math.abs(width) + 'px';
+            selectionBox.style.height = Math.abs(height) + 'px';
+            selectionBox.style.left = (width < 0 ? currentX : startX) + 'px';
+            selectionBox.style.top = (height < 0 ? currentY : startY) + 'px';
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (!isSelecting) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+
+            selectedArea = {
+                x: Math.min(startX, endX),
+                y: Math.min(startY, endY),
+                width: Math.abs(endX - startX),
+                height: Math.abs(endY - startY)
+            };
+
+            isSelecting = false;
+            processBtn.disabled = false;
+        });
+
+        async function extractTextFromArea(page, area, scale = 1.5) {
+            const viewport = page.getViewport({ scale });
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+
+            tempCanvas.width = area.width;
+            tempCanvas.height = area.height;
+
+            await page.render({
+                canvasContext: tempCtx,
+                viewport: viewport,
+                transform: [1, 0, 0, 1, -area.x, -area.y]
+            }).promise;
+
+            const result = await Tesseract.recognize(
+                tempCanvas,
+                'eng',
+                {
+                    tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@.-_'
+                }
+            );
+
+            return result.data.text;
+        }
+
+        function extractEmails(text) {
+            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+            return text.match(emailRegex) || [];
+        }
+
+        async function processFile(file, index, total) {
+            const arrayBuffer = await file.arrayBuffer();
+            pdfContents.set(file.name, arrayBuffer);
+            
+            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+            const page = await pdf.getPage(1);
+            
+            const text = await extractTextFromArea(page, selectedArea);
+            const emails = extractEmails(text);
+            
+            const viewport = page.getViewport({ scale: 1.0 });
+            const previewCanvas = document.createElement('canvas');
+            const previewCtx = previewCanvas.getContext('2d');
+            previewCanvas.width = viewport.width;
+            previewCanvas.height = viewport.height;
+            
+            await page.render({
+                canvasContext: previewCtx,
+                viewport: viewport
+            }).promise;
+            
+            pdfPreviews.set(file.name, previewCanvas);
+            
+            const card = document.createElement('div');
+            card.className = 'result-card';
+            
+            const email = emails.length > 0 ? emails[0] : '';
+            
+            card.innerHTML = `
+                <h3 title="${file.name}">${file.name}</h3>
+                <div class="email-container">
+                    <input type="text" class="email-input" value="${email}" data-filename="${file.name}">
+                    <div class="button-group">
+                        <button class="btn" onclick="copyEmail('${file.name}')">Copy</button>
+                        <button class="btn" onclick="showPreview('${file.name}')">Review</button>
+                        <button class="btn" onclick="downloadMsg('${file.name}')">Download MSG</button>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('results').appendChild(card);
+            document.getElementById('processedCount').textContent = index + 1;
+        }
+
+        async function processFiles() {
+            const results = document.getElementById('results');
+            results.innerHTML = '';
+            pdfPreviews.clear();
+            pdfContents.clear();
+            
+            document.getElementById('totalCount').textContent = selectedFiles.length;
+            document.getElementById('processedCount').textContent = '0';
+            processingIndicator.style.display = 'block';
+            
+            for (let i = 0; i < selectedFiles.length; i++) {
+                await processFile(selectedFiles[i], i, selectedFiles.length);
+            }
+            
+            processingIndicator.style.display = 'none';
+        }
+
+        function copyEmail(filename) {
+            const input = document.querySelector(`input[data-filename="${filename}"]`);
+            navigator.clipboard.writeText(input.value)
+                .then(() => alert('Email скопирован'))
+                .catch(err => console.error('Ошибка копирования:', err));
+        }
+
+        function showPreview(filename) {
+            const previewCanvas = pdfPreviews.get(filename);
+            if (previewCanvas) {
+                const canvas = document.getElementById('previewCanvas');
+                canvas.width = previewCanvas.width;
+                canvas.height = previewCanvas.height;
+                canvas.getContext('2d').drawImage(previewCanvas, 0, 0);
+                previewModal.style.display = 'flex';
+            }
+        }
+
+        function closePreview() {
+            previewModal.style.display = 'none';
+        }
+
+        async function downloadMsg(filename) {
+    try {
+        // Получаем данные из формы
+        const input = document.querySelector(`input[data-filename="${filename}"]`);
+        const email = input?.value;
+        const subject = document.getElementById('emailSubject')?.value;
+        const message = document.getElementById('emailMessage')?.value;
+        const pdfData = pdfContents.get(filename);
+
+        if (!email || !subject || !message || !pdfData) {
+            throw new Error('Заполните все поля и убедитесь, что файл обработан');
+        }
+
+        // Создаем EML с вложением
+        const emlContent = createEMLWithAttachment(
+            email,
+            subject,
+            message,
+            filename,
+            pdfData
+        );
+
+        // Скачиваем файл
+        downloadFile(emlContent, filename.replace('.pdf', '.eml'), 'message/rfc822');
+        
+    } catch (error) {
+        console.error('Ошибка создания письма:', error);
+        alert(`Ошибка: ${error.message}`);
+    }
+}
+
+function createEMLWithAttachment(to, subject, body, filename, pdfData) {
+    // 1. Подготовка данных
+    const boundary = `----=_NextPart_${Math.random().toString(36).substr(2, 16)}`;
+    const pdfBase64 = arrayBufferToBase64(pdfData);
+
+    // 2. Формирование EML
+    const eml = [
+        `From: "Sender" <no-reply@example.com>`,
+        `To: ${to}`,
+        `Subject: ${subject}`,
+        `MIME-Version: 1.0`,
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
+        ``,
+        `--${boundary}`,
+        `Content-Type: text/plain; charset=UTF-8`,
+        `Content-Transfer-Encoding: quoted-printable`,
+        ``,
+        body.replace(/\n/g, '\r\n'),
+        ``,
+        `--${boundary}`,
+        `Content-Type: application/pdf; name="${filename}"`,
+        `Content-Transfer-Encoding: base64`,
+        `Content-Disposition: attachment; filename="${filename}"`,
+        ``,
+        ...splitBase64(pdfBase64),
+        ``,
+        `--${boundary}--`,
+        ``
+    ].join('\r\n');
+
+    return eml;
+}
+
+// Преобразование ArrayBuffer/Uint8Array в Base64
+function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+
+// Разбиение Base64 на строки по 76 символов
+function splitBase64(str) {
+    const chunks = [];
+    for (let i = 0; i < str.length; i += 76) {
+        chunks.push(str.substr(i, 76));
+    }
+    return chunks;
+}
+
+function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 100);
+}
+
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            selectedFiles = Array.from(e.target.files);
+            if (selectedFiles.length > 0) {
+                await displayFirstPage(selectedFiles[0]);
+                processBtn.disabled = !selectedArea;
+            }
+        });
+
+        processBtn.addEventListener('click', processFiles);
+
+        previewModal.addEventListener('click', (e) => {
+            if (e.target === previewModal) {
+                closePreview();
+            }
+        });
+    </script>
+</body>
+</html>
